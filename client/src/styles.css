@@ -1,0 +1,9 @@
+body {
+  background: #f8f9fa;
+}
+
+.flash-message {
+  position: sticky;
+  top: 12px;
+  z-index: 1040;
+}
