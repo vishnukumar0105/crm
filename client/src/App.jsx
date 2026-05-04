@@ -1,56 +1,190 @@
-import { useEffect, useState } from 'react';
+import { useMemo, useState } from 'react';
 import $ from 'jquery';
-import ContactForm from './components/ContactForm.jsx';
-import ContactTable from './components/ContactTable.jsx';
 
-const API_URL = 'http://localhost:5000/api/contacts';
+const plans = [
+  {
+    id: 'free',
+    title: 'Free',
+    price: '$0',
+    period: '/month',
+    description: 'Perfect for very small teams getting started.',
+    features: ['Up to 5 employees', 'Basic attendance logs', 'Community support'],
+    cta: 'Get Started',
+  },
+  {
+    id: 'silver',
+    title: 'Silver',
+    price: '$29',
+    period: '/month',
+    description: 'Built for growing teams that need automation.',
+    features: ['Up to 100 employees', 'Payroll exports', 'Shift scheduling', 'Priority support'],
+    cta: 'Choose Silver',
+    popular: true,
+  },
+  {
+    id: 'gold',
+    title: 'Gold',
+    price: '$79',
+    period: '/month',
+    description: 'Advanced controls and insights for larger organizations.',
+    features: ['Unlimited employees', 'Smart analytics dashboard', 'Multi-branch management', '24/7 premium support'],
+    cta: 'Choose Gold',
+  },
+];
+
+const defaultForm = {
+  fullName: '',
+  email: '',
+  company: '',
+  phone: '',
+  paymentMethod: 'Credit Card',
+  cardName: '',
+  cardNumber: '',
+  expiryDate: '',
+  cvv: '',
+};
 
 export default function App() {
-  const [contacts, setContacts] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [selectedPlan, setSelectedPlan] = useState(null);
+  const [formData, setFormData] = useState(defaultForm);
+  const [membership, setMembership] = useState(null);
 
-  async function loadContacts() {
-    const response = await fetch(API_URL);
-    const data = await response.json();
-    setContacts(data);
-    setLoading(false);
-  }
+  const planName = useMemo(() => plans.find((p) => p.id === selectedPlan)?.title || '', [selectedPlan]);
 
-  async function createContact(contact) {
-    await fetch(API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(contact),
-    });
+  const openMembershipModal = (planId) => {
+    setSelectedPlan(planId);
+    const modal = new window.bootstrap.Modal(document.getElementById('membershipModal'));
+    modal.show();
+  };
 
-    await loadContacts();
+  const openProfileModal = () => {
+    const modal = new window.bootstrap.Modal(document.getElementById('profileModal'));
+    modal.show();
+  };
 
-    $('.flash-message')
+  const handleChange = (event) => {
+    const { name, value } = event.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleSubmit = (event) => {
+    event.preventDefault();
+
+    if (!selectedPlan) return;
+
+    setMembership({ ...formData, plan: selectedPlan, activatedAt: new Date().toISOString() });
+
+    $('.success-toast')
       .stop(true, true)
-      .text('Contact saved successfully.')
-      .fadeIn(200)
-      .delay(900)
-      .fadeOut(300);
-  }
+      .text(`🎉 Your ${planName} membership is activated.`)
+      .fadeIn(250)
+      .delay(1800)
+      .fadeOut(350);
 
-  async function deleteContact(id) {
-    await fetch(`${API_URL}/${id}`, { method: 'DELETE' });
-    await loadContacts();
-  }
-
-  useEffect(() => {
-    loadContacts();
-  }, []);
+    window.bootstrap.Modal.getInstance(document.getElementById('membershipModal'))?.hide();
+  };
 
   return (
-    <div className="container py-4">
-      <h1 className="mb-1">CRM App</h1>
-      <p className="text-muted">React + MongoDB + Bootstrap 5 + jQuery</p>
+    <div className="app-shell">
+      <div className="top-glow" />
+      <div className="container py-4 py-md-5 position-relative">
+        <div className="d-flex justify-content-between align-items-center mb-4">
+          <div>
+            <p className="eyebrow mb-2">Employee Management System</p>
+            <h1 className="hero-title mb-1">Choose Your Membership</h1>
+            <p className="text-muted mb-0">Modern plans designed for every company stage.</p>
+          </div>
+          <button
+            type="button"
+            className="profile-icon-btn"
+            onClick={openProfileModal}
+            disabled={!membership}
+            title={membership ? 'Edit your membership details' : 'Activate a membership first'}
+          >
+            <i className="bi bi-person-circle fs-3" />
+          </button>
+        </div>
 
-      <div className="alert alert-success flash-message" role="alert" style={{ display: 'none' }} />
+        <div className="alert alert-success success-toast" role="alert" style={{ display: 'none' }} />
 
-      <ContactForm onSave={createContact} />
-      {loading ? <div className="mt-4">Loading contacts...</div> : <ContactTable contacts={contacts} onDelete={deleteContact} />}
+        <div className="row g-4">
+          {plans.map((plan) => (
+            <div className="col-12 col-md-6 col-xl-4" key={plan.id}>
+              <div className={`plan-card h-100 ${plan.popular ? 'popular' : ''}`}>
+                {plan.popular && <span className="badge rounded-pill popular-badge">Most Popular</span>}
+                <h3>{plan.title}</h3>
+                <div className="d-flex align-items-end gap-1 mb-3">
+                  <span className="price-value">{plan.price}</span>
+                  <span className="price-period">{plan.period}</span>
+                </div>
+                <p className="text-muted mb-3">{plan.description}</p>
+                <ul className="feature-list list-unstyled mb-4">
+                  {plan.features.map((feature) => (
+                    <li key={feature}><i className="bi bi-check-circle-fill me-2" />{feature}</li>
+                  ))}
+                </ul>
+                <button className="btn w-100 plan-btn" type="button" onClick={() => openMembershipModal(plan.id)}>
+                  {plan.cta}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="modal fade" id="membershipModal" tabIndex="-1" aria-hidden="true">
+        <div className="modal-dialog modal-lg modal-dialog-centered">
+          <div className="modal-content border-0 shadow-lg">
+            <div className="modal-header">
+              <h5 className="modal-title">{planName} Membership Form</h5>
+              <button type="button" className="btn-close" data-bs-dismiss="modal" aria-label="Close" />
+            </div>
+            <form onSubmit={handleSubmit}>
+              <div className="modal-body row g-3">
+                <div className="col-md-6"><label className="form-label">Full Name</label><input required className="form-control" name="fullName" value={formData.fullName} onChange={handleChange} /></div>
+                <div className="col-md-6"><label className="form-label">Email</label><input required type="email" className="form-control" name="email" value={formData.email} onChange={handleChange} /></div>
+                <div className="col-md-6"><label className="form-label">Company</label><input required className="form-control" name="company" value={formData.company} onChange={handleChange} /></div>
+                <div className="col-md-6"><label className="form-label">Phone</label><input required className="form-control" name="phone" value={formData.phone} onChange={handleChange} /></div>
+                <div className="col-md-6"><label className="form-label">Payment Method</label><select className="form-select" name="paymentMethod" value={formData.paymentMethod} onChange={handleChange}><option>Credit Card</option><option>Debit Card</option><option>PayPal</option><option>Bank Transfer</option></select></div>
+                <div className="col-md-6"><label className="form-label">Name on Card</label><input required className="form-control" name="cardName" value={formData.cardName} onChange={handleChange} /></div>
+                <div className="col-md-6"><label className="form-label">Card Number</label><input required className="form-control" name="cardNumber" value={formData.cardNumber} onChange={handleChange} /></div>
+                <div className="col-md-3"><label className="form-label">Expiry</label><input required className="form-control" placeholder="MM/YY" name="expiryDate" value={formData.expiryDate} onChange={handleChange} /></div>
+                <div className="col-md-3"><label className="form-label">CVV</label><input required className="form-control" name="cvv" value={formData.cvv} onChange={handleChange} /></div>
+              </div>
+              <div className="modal-footer"><button type="button" className="btn btn-light" data-bs-dismiss="modal">Cancel</button><button type="submit" className="btn plan-btn px-4">Activate Membership</button></div>
+            </form>
+          </div>
+        </div>
+      </div>
+
+      <div className="modal fade" id="profileModal" tabIndex="-1" aria-hidden="true">
+        <div className="modal-dialog modal-lg modal-dialog-centered">
+          <div className="modal-content border-0 shadow-lg">
+            <div className="modal-header">
+              <h5 className="modal-title">Edit Profile Details</h5>
+              <button type="button" className="btn-close" data-bs-dismiss="modal" aria-label="Close" />
+            </div>
+            <div className="modal-body">
+              {!membership ? (
+                <p className="text-muted mb-0">No active membership yet.</p>
+              ) : (
+                <>
+                  <p className="text-muted">Current plan: <strong className="text-dark text-capitalize">{membership.plan}</strong></p>
+                  <div className="row g-3">
+                    <div className="col-md-6"><label className="form-label">Full Name</label><input className="form-control" name="fullName" value={formData.fullName} onChange={handleChange} /></div>
+                    <div className="col-md-6"><label className="form-label">Email</label><input type="email" className="form-control" name="email" value={formData.email} onChange={handleChange} /></div>
+                    <div className="col-md-6"><label className="form-label">Company</label><input className="form-control" name="company" value={formData.company} onChange={handleChange} /></div>
+                    <div className="col-md-6"><label className="form-label">Phone</label><input className="form-control" name="phone" value={formData.phone} onChange={handleChange} /></div>
+                  </div>
+                </>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn btn-light" data-bs-dismiss="modal">Close</button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
