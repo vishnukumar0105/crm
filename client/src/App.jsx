@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import $ from 'jquery';
+import { Modal } from 'bootstrap';
 
 const plans = [
   { id: 'free', title: 'Free', price: '$0', period: '/month', description: 'Perfect for very small teams getting started.', features: ['Up to 5 employees', 'Basic attendance logs', 'Community support'], cta: 'Get Started' },
@@ -16,7 +17,11 @@ export default function App() {
   const plan = useMemo(() => plans.find((p) => p.id === selectedPlan) || null, [selectedPlan]);
   const requiresPayment = selectedPlan && selectedPlan !== 'free';
 
-  const openProfileModal = () => new window.bootstrap.Modal(document.getElementById('profileModal')).show();
+  const openProfileModal = () => {
+    const modalInstance = new Modal(document.getElementById('profileModal'));
+    modalInstance.show();
+  };
+
   const handleChange = (event) => setFormData((prev) => ({ ...prev, [event.target.name]: event.target.value }));
 
   const handleSubmit = (event) => {
