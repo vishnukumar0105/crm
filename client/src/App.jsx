@@ -1,34 +1,72 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import $ from 'jquery';
 import { Modal } from 'bootstrap';
 
+const STORAGE_KEY = 'ems_memberships';
+
 const plans = [
-  { id: 'free', title: 'Free', price: '$0', period: '/month', description: 'Perfect for very small teams getting started.', features: ['Up to 5 employees', 'Basic attendance logs', 'Community support'], cta: 'Get Started' },
-  { id: 'silver', title: 'Silver', price: '$29', period: '/month', description: 'Built for growing teams that need automation.', features: ['Up to 100 employees', 'Payroll exports', 'Shift scheduling', 'Priority support'], cta: 'Choose Silver', popular: true },
-  { id: 'gold', title: 'Gold', price: '$79', period: '/month', description: 'Advanced controls and insights for larger organizations.', features: ['Unlimited employees', 'Smart analytics dashboard', 'Multi-branch management', '24/7 premium support'], cta: 'Choose Gold' },
+  { id: 'free', title: 'Free', price: '$0', period: '/month', validityDays: 30, description: 'Perfect for very small teams getting started.', features: ['Up to 5 employees', 'Basic attendance logs', 'Community support'], cta: 'Get Started' },
+  { id: 'silver', title: 'Silver', price: '$29', period: '/month', validityDays: 30, description: 'Built for growing teams that need automation.', features: ['Up to 100 employees', 'Payroll exports', 'Shift scheduling', 'Priority support'], cta: 'Choose Silver', popular: true },
+  { id: 'gold', title: 'Gold', price: '$79', period: '/month', validityDays: 365, description: 'Advanced controls and insights for larger organizations.', features: ['Unlimited employees', 'Smart analytics dashboard', 'Multi-branch management', '24/7 premium support'], cta: 'Choose Gold' },
 ];
 
 const defaultForm = { fullName: '', email: '', company: '', phone: '', paymentMethod: 'Credit Card', cardName: '', cardNumber: '', expiryDate: '', cvv: '' };
+
+const readMembers = () => {
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+  } catch {
+    return [];
+  }
+};
 
 export default function App() {
   const [selectedPlan, setSelectedPlan] = useState(null);
   const [formData, setFormData] = useState(defaultForm);
   const [membership, setMembership] = useState(null);
+  const [memberList, setMemberList] = useState([]);
+
   const plan = useMemo(() => plans.find((p) => p.id === selectedPlan) || null, [selectedPlan]);
   const requiresPayment = selectedPlan && selectedPlan !== 'free';
 
-  const openProfileModal = () => {
-    const modalInstance = new Modal(document.getElementById('profileModal'));
-    modalInstance.show();
-  };
+  useEffect(() => {
+    setMemberList(readMembers());
+  }, []);
 
+  const openProfileModal = () => new Modal(document.getElementById('profileModal')).show();
+  const openAdminModal = () => new Modal(document.getElementById('adminModal')).show();
   const handleChange = (event) => setFormData((prev) => ({ ...prev, [event.target.name]: event.target.value }));
+
+  const saveMemberToLocalDb = (record) => {
+    const users = readMembers();
+    const idx = users.findIndex((u) => u.email.toLowerCase() === record.email.toLowerCase());
+    if (idx >= 0) users[idx] = record;
+    else users.push(record);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(users));
+    setMemberList(users);
+  };
 
   const handleSubmit = (event) => {
     event.preventDefault();
-    if (!selectedPlan) return;
-    setMembership({ ...formData, plan: selectedPlan, activatedAt: new Date().toISOString() });
-    $('.success-toast').stop(true, true).text(`🎉 Your ${plan?.title} membership is activated.`).fadeIn(250).delay(1800).fadeOut(350);
+    if (!selectedPlan || !plan) return;
+
+    const activatedAt = new Date();
+    const expiresAt = new Date(activatedAt);
+    expiresAt.setDate(expiresAt.getDate() + plan.validityDays);
+
+    const record = {
+      ...formData,
+      plan: selectedPlan,
+      status: 'active',
+      activatedAt: activatedAt.toISOString(),
+      expiresAt: expiresAt.toISOString(),
+      paymentMethod: requiresPayment ? formData.paymentMethod : 'No Payment Required',
+    };
+
+    setMembership(record);
+    saveMemberToLocalDb(record);
+
+    $('.success-toast').stop(true, true).text(`🎉 ${plan.title} membership activated and login created for ${formData.email}.`).fadeIn(250).delay(2200).fadeOut(350);
   };
 
   return (
@@ -41,9 +79,14 @@ export default function App() {
             <h1 className="hero-title mb-1">Choose Your Membership</h1>
             <p className="text-muted mb-0">Modern plans designed for every company stage.</p>
           </div>
-          <button type="button" className="profile-icon-btn" onClick={openProfileModal} disabled={!membership} title={membership ? 'Edit your membership details' : 'Activate a membership first'}>
-            <i className="bi bi-person-circle fs-3" />
-          </button>
+          <div className="d-flex gap-2">
+            <button type="button" className="profile-icon-btn" onClick={openAdminModal} title="Admin members list">
+              <i className="bi bi-shield-lock fs-4" />
+            </button>
+            <button type="button" className="profile-icon-btn" onClick={openProfileModal} disabled={!membership} title={membership ? 'Edit your membership details' : 'Activate a membership first'}>
+              <i className="bi bi-person-circle fs-3" />
+            </button>
+          </div>
         </div>
 
         <div className="alert alert-success success-toast" role="alert" style={{ display: 'none' }} />
@@ -80,10 +123,10 @@ export default function App() {
                   <div className="col-12"><hr /></div>
                   <div className="col-12"><h6 className="mb-1">Payment Details</h6><p className="text-muted small mb-0">Complete payment to activate your {plan?.title} membership.</p></div>
                   <div className="col-md-6"><label className="form-label">Payment Method</label><select className="form-select" name="paymentMethod" value={formData.paymentMethod} onChange={handleChange}><option>Credit Card</option><option>Debit Card</option><option>PayPal</option><option>Bank Transfer</option></select></div>
-                  <div className="col-md-6"><label className="form-label">Name on Card</label><input required={requiresPayment} className="form-control" name="cardName" value={formData.cardName} onChange={handleChange} /></div>
-                  <div className="col-md-6"><label className="form-label">Card Number</label><input required={requiresPayment} className="form-control" name="cardNumber" value={formData.cardNumber} onChange={handleChange} /></div>
-                  <div className="col-md-3"><label className="form-label">Expiry</label><input required={requiresPayment} className="form-control" placeholder="MM/YY" name="expiryDate" value={formData.expiryDate} onChange={handleChange} /></div>
-                  <div className="col-md-3"><label className="form-label">CVV</label><input required={requiresPayment} className="form-control" name="cvv" value={formData.cvv} onChange={handleChange} /></div>
+                  <div className="col-md-6"><label className="form-label">Name on Card</label><input required className="form-control" name="cardName" value={formData.cardName} onChange={handleChange} /></div>
+                  <div className="col-md-6"><label className="form-label">Card Number</label><input required className="form-control" name="cardNumber" value={formData.cardNumber} onChange={handleChange} /></div>
+                  <div className="col-md-3"><label className="form-label">Expiry</label><input required className="form-control" placeholder="MM/YY" name="expiryDate" value={formData.expiryDate} onChange={handleChange} /></div>
+                  <div className="col-md-3"><label className="form-label">CVV</label><input required className="form-control" name="cvv" value={formData.cvv} onChange={handleChange} /></div>
                 </>
               ) : (
                 <div className="col-12"><div className="free-pill"><i className="bi bi-stars me-2" />Free plan selected — no payment is required.</div></div>
@@ -107,6 +150,35 @@ export default function App() {
                 <div className="col-md-6"><label className="form-label">Company</label><input className="form-control" name="company" value={formData.company} onChange={handleChange} /></div>
                 <div className="col-md-6"><label className="form-label">Phone</label><input className="form-control" name="phone" value={formData.phone} onChange={handleChange} /></div>
               </div>}
+            </div>
+            <div className="modal-footer"><button type="button" className="btn btn-light" data-bs-dismiss="modal">Close</button></div>
+          </div>
+        </div>
+      </div>
+
+      <div className="modal fade" id="adminModal" tabIndex="-1" aria-hidden="true">
+        <div className="modal-dialog modal-xl modal-dialog-centered">
+          <div className="modal-content border-0 shadow-lg">
+            <div className="modal-header"><h5 className="modal-title">Admin Panel — Activated Members</h5><button type="button" className="btn-close" data-bs-dismiss="modal" aria-label="Close" /></div>
+            <div className="modal-body">
+              {memberList.length === 0 ? <p className="text-muted mb-0">No members activated yet.</p> : (
+                <div className="table-responsive">
+                  <table className="table table-hover align-middle">
+                    <thead><tr><th>Name</th><th>Email</th><th>Company</th><th>Phone</th><th>Plan</th><th>Activated Date</th><th>Expiry Date</th><th>Status</th></tr></thead>
+                    <tbody>
+                      {memberList.map((user) => (
+                        <tr key={user.email}>
+                          <td>{user.fullName}</td><td>{user.email}</td><td>{user.company}</td><td>{user.phone}</td>
+                          <td className="text-capitalize">{user.plan}</td>
+                          <td>{new Date(user.activatedAt).toLocaleDateString()}</td>
+                          <td>{new Date(user.expiresAt).toLocaleDateString()}</td>
+                          <td><span className="badge rounded-pill text-bg-success">{user.status}</span></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
             <div className="modal-footer"><button type="button" className="btn btn-light" data-bs-dismiss="modal">Close</button></div>
           </div>
