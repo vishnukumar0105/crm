@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import $ from 'jquery';
 import { Modal } from 'bootstrap';
 
-const STORAGE_KEY = 'ems_memberships';
+const MEMBERS_API = 'http://localhost:5000/api/memberships';
 
 const plans = [
   { id: 'free', title: 'Free', price: '$0', period: '/month', validityDays: 30, description: 'Perfect for very small teams getting started.', features: ['Up to 5 employees', 'Basic attendance logs', 'Community support'], cta: 'Get Started' },
@@ -11,14 +11,6 @@ const plans = [
 ];
 
 const defaultForm = { fullName: '', email: '', company: '', phone: '', paymentMethod: 'Credit Card', cardName: '', cardNumber: '', expiryDate: '', cvv: '' };
-
-const readMembers = () => {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
-  } catch {
-    return [];
-  }
-};
 
 export default function App() {
   const [selectedPlan, setSelectedPlan] = useState(null);
@@ -29,31 +21,39 @@ export default function App() {
   const plan = useMemo(() => plans.find((p) => p.id === selectedPlan) || null, [selectedPlan]);
   const requiresPayment = selectedPlan && selectedPlan !== 'free';
 
-  useEffect(() => {
-    const users = readMembers();
+  const loadMembers = async () => {
+    const response = await fetch(MEMBERS_API);
+    const users = await response.json();
     setMemberList(users);
 
     if (users.length > 0) {
-      const lastActive = users[users.length - 1];
+      const lastActive = users[0];
       setMembership(lastActive);
       setFormData((prev) => ({ ...prev, ...lastActive }));
     }
+  };
+
+  useEffect(() => {
+    loadMembers();
   }, []);
 
   const openProfileModal = () => new Modal(document.getElementById('profileModal')).show();
   const openAdminModal = () => new Modal(document.getElementById('adminModal')).show();
   const handleChange = (event) => setFormData((prev) => ({ ...prev, [event.target.name]: event.target.value }));
 
-  const saveMemberToLocalDb = (record) => {
-    const users = readMembers();
-    const idx = users.findIndex((u) => u.email.toLowerCase() === record.email.toLowerCase());
-    if (idx >= 0) users[idx] = record;
-    else users.push(record);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(users));
-    setMemberList(users);
+  const saveMemberToDb = async (record) => {
+    const response = await fetch(MEMBERS_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(record),
+    });
+
+    const savedUser = await response.json();
+    setMembership(savedUser);
+    await loadMembers();
   };
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
     if (!selectedPlan || !plan) return;
 
@@ -70,10 +70,9 @@ export default function App() {
       paymentMethod: requiresPayment ? formData.paymentMethod : 'No Payment Required',
     };
 
-    setMembership(record);
-    saveMemberToLocalDb(record);
+    await saveMemberToDb(record);
 
-    $('.success-toast').stop(true, true).text(`🎉 ${plan.title} membership activated and login created for ${formData.email}.`).fadeIn(250).delay(2200).fadeOut(350);
+    $('.success-toast').stop(true, true).text(`🎉 ${plan.title} membership activated and saved to database for ${formData.email}.`).fadeIn(250).delay(2200).fadeOut(350);
   };
 
   return (

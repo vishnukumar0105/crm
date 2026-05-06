@@ -3,6 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import mongoose from 'mongoose';
 import Contact from './models/Contact.js';
+import Membership from './models/Membership.js';
 
 dotenv.config();
 
@@ -48,6 +49,27 @@ app.delete('/api/contacts/:id', async (req, res) => {
   }
 
   return res.status(204).send();
+});
+
+app.get('/api/memberships', async (_req, res) => {
+  const members = await Membership.find().sort({ createdAt: -1 });
+  res.json(members);
+});
+
+app.post('/api/memberships', async (req, res) => {
+  const { email, ...payload } = req.body;
+
+  if (!email) {
+    return res.status(400).json({ message: 'Email is required.' });
+  }
+
+  const member = await Membership.findOneAndUpdate(
+    { email: email.toLowerCase() },
+    { ...payload, email: email.toLowerCase() },
+    { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true },
+  );
+
+  return res.status(201).json(member);
 });
 
 async function startServer() {
