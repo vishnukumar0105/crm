@@ -1,59 +1,52 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import mongoose from 'mongoose';
-import Contact from './models/Contact.js';
-import Membership from './models/Membership.js';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/crm-app';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const DATA_DIR = path.resolve(__dirname, '../data');
+const MEMBERSHIP_QUERY_FILE = path.join(DATA_DIR, 'memberships.query.json');
 
 app.use(cors());
 app.use(express.json());
 
+async function ensureMembershipQueryFile() {
+  await mkdir(DATA_DIR, { recursive: true });
+
+  try {
+    await readFile(MEMBERSHIP_QUERY_FILE, 'utf8');
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+    await writeFile(MEMBERSHIP_QUERY_FILE, '[]\n');
+  }
+}
+
+async function readMemberships() {
+  await ensureMembershipQueryFile();
+  const fileContent = await readFile(MEMBERSHIP_QUERY_FILE, 'utf8');
+  return JSON.parse(fileContent || '[]');
+}
+
+async function writeMemberships(memberships) {
+  await ensureMembershipQueryFile();
+  await writeFile(MEMBERSHIP_QUERY_FILE, `${JSON.stringify(memberships, null, 2)}\n`);
+}
+
 app.get('/api/health', (_req, res) => {
-  res.json({ message: 'CRM API is running' });
-});
-
-app.get('/api/contacts', async (_req, res) => {
-  const contacts = await Contact.find().sort({ createdAt: -1 });
-  res.json(contacts);
-});
-
-app.post('/api/contacts', async (req, res) => {
-  const contact = await Contact.create(req.body);
-  res.status(201).json(contact);
-});
-
-app.put('/api/contacts/:id', async (req, res) => {
-  const updated = await Contact.findByIdAndUpdate(req.params.id, req.body, {
-    new: true,
-    runValidators: true,
-  });
-
-  if (!updated) {
-    return res.status(404).json({ message: 'Contact not found' });
-  }
-
-  return res.json(updated);
-});
-
-app.delete('/api/contacts/:id', async (req, res) => {
-  const deleted = await Contact.findByIdAndDelete(req.params.id);
-
-  if (!deleted) {
-    return res.status(404).json({ message: 'Contact not found' });
-  }
-
-  return res.status(204).send();
+  res.json({ message: 'CRM API is running', storage: MEMBERSHIP_QUERY_FILE });
 });
 
 app.get('/api/memberships', async (_req, res) => {
-  const members = await Membership.find().sort({ createdAt: -1 });
-  res.json(members);
+  const members = await readMemberships();
+  res.json(members.sort((a, b) => new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt)));
 });
 
 app.post('/api/memberships', async (req, res) => {
@@ -63,19 +56,30 @@ app.post('/api/memberships', async (req, res) => {
     return res.status(400).json({ message: 'Email is required.' });
   }
 
-  const member = await Membership.findOneAndUpdate(
-    { email: email.toLowerCase() },
-    { ...payload, email: email.toLowerCase() },
-    { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true },
-  );
+  const now = new Date().toISOString();
+  const normalizedEmail = email.toLowerCase();
+  const members = await readMemberships();
+  const existingIndex = members.findIndex((member) => member.email.toLowerCase() === normalizedEmail);
+  const member = {
+    id: existingIndex >= 0 ? members[existingIndex].id : randomUUID(),
+    ...payload,
+    email: normalizedEmail,
+    createdAt: existingIndex >= 0 ? members[existingIndex].createdAt : now,
+    updatedAt: now,
+  };
 
+  if (existingIndex >= 0) members[existingIndex] = member;
+  else members.push(member);
+
+  await writeMemberships(members);
   return res.status(201).json(member);
 });
 
 async function startServer() {
-  await mongoose.connect(MONGODB_URI);
+  await ensureMembershipQueryFile();
   app.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`Membership query file: ${MEMBERSHIP_QUERY_FILE}`);
   });
 }
 
