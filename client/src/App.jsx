@@ -30,7 +30,14 @@ export default function App() {
   const requiresPayment = selectedPlan && selectedPlan !== 'free';
 
   useEffect(() => {
-    setMemberList(readMembers());
+    const users = readMembers();
+    setMemberList(users);
+
+    if (users.length > 0) {
+      const lastActive = users[users.length - 1];
+      setMembership(lastActive);
+      setFormData((prev) => ({ ...prev, ...lastActive }));
+    }
   }, []);
 
   const openProfileModal = () => new Modal(document.getElementById('profileModal')).show();
@@ -83,7 +90,7 @@ export default function App() {
             <button type="button" className="profile-icon-btn" onClick={openAdminModal} title="Admin members list">
               <i className="bi bi-shield-lock fs-4" />
             </button>
-            <button type="button" className="profile-icon-btn" onClick={openProfileModal} disabled={!membership} title={membership ? 'Edit your membership details' : 'Activate a membership first'}>
+            <button type="button" className="profile-icon-btn" onClick={openProfileModal} disabled={!membership && memberList.length === 0} title={membership || memberList.length > 0 ? 'Edit your membership details' : 'Activate a membership first'}>
               <i className="bi bi-person-circle fs-3" />
             </button>
           </div>
