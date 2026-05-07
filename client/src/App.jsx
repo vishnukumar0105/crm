@@ -72,7 +72,7 @@ export default function App() {
 
     await saveMemberToDb(record);
 
-    $('.success-toast').stop(true, true).text(`🎉 ${plan.title} membership activated and saved to local query file for ${formData.email}.`).fadeIn(250).delay(2200).fadeOut(350);
+    $('.success-toast').stop(true, true).text(`🎉 ${plan.title} membership activated and saved to MongoDB collection for ${formData.email}.`).fadeIn(250).delay(2200).fadeOut(350);
   };
 
   return (
