@@ -190,6 +190,28 @@ DB_COMPARE_PROVIDERS=mongodb,mysql
 
 Normal create/update actions still use `DB_PROVIDER`. For example, `DB_PROVIDER=mysql` saves new form submissions to MySQL. The provider-specific icon endpoints are read-only viewer APIs for RnD comparison.
 
+
+### If the MySQL icon says MySQL is not connected
+
+The MySQL icon reads from these provider-specific APIs, so the server must be able to open a MySQL connection in the same backend process:
+
+```env
+DB_COMPARE_PROVIDERS=mongodb,mysql
+MYSQL_HOST=127.0.0.1
+MYSQL_PORT=3306
+MYSQL_DATABASE=Subscription
+MYSQL_USER=root
+MYSQL_PASSWORD="your_mysql_password_here"
+```
+
+After changing `server/.env`, stop and restart the backend. You can verify both viewer connections at:
+
+```text
+http://localhost:5000/api/health
+```
+
+The `providers.mysql` value should be `true`. If it is `false`, check the `providerErrors.mysql` value returned by `/api/health`; it will show the exact MySQL connection/import problem.
+
 ## 8) API Endpoints
 
 ### Health Check

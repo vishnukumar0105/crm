@@ -18,6 +18,7 @@ const PLAN_TABLE = 'membership_plans';
 let mysqlPool;
 let mongoReady = false;
 let mysqlReady = false;
+const providerErrors = { mongodb: null, mysql: null };
 
 const defaultPlans = [
   {
@@ -263,13 +264,15 @@ function getCardLast4(cardNumber = '') {
 
 function ensureProviderReady(provider) {
   if (provider === 'mysql' && !mysqlReady) {
-    const error = new Error('MySQL is not connected. Check MYSQL_* settings and DB_PROVIDER/DB_COMPARE_PROVIDERS.');
+    const detail = providerErrors.mysql ? ` Last MySQL error: ${providerErrors.mysql}` : '';
+    const error = new Error(`MySQL is not connected. Check MYSQL_* settings, mysql2 installation, and DB_COMPARE_PROVIDERS.${detail}`);
     error.statusCode = 503;
     throw error;
   }
 
   if (provider === 'mongodb' && !mongoReady) {
-    const error = new Error('MongoDB is not connected. Check MONGODB_* settings and DB_PROVIDER/DB_COMPARE_PROVIDERS.');
+    const detail = providerErrors.mongodb ? ` Last MongoDB error: ${providerErrors.mongodb}` : '';
+    const error = new Error(`MongoDB is not connected. Check MONGODB_* settings and DB_COMPARE_PROVIDERS.${detail}`);
     error.statusCode = 503;
     throw error;
   }
@@ -487,6 +490,7 @@ app.get('/api/health', (_req, res) => {
       mongodb: mongoReady,
       mysql: mysqlReady,
     },
+    providerErrors,
   });
 });
 
@@ -495,7 +499,9 @@ app.get('/api/membership-plans', asyncRoute(async (_req, res) => {
 }));
 
 app.get('/api/providers/:provider/membership-plans', asyncRoute(async (req, res) => {
-  res.json(await getPlans(normalizeProvider(req.params.provider)));
+  const provider = normalizeProvider(req.params.provider);
+  await initializeProvider(provider, true);
+  res.json(await getPlans(provider));
 }));
 
 app.post('/api/membership-plans', asyncRoute(async (req, res) => {
@@ -515,7 +521,9 @@ app.get('/api/memberships', asyncRoute(async (_req, res) => {
 }));
 
 app.get('/api/providers/:provider/memberships', asyncRoute(async (req, res) => {
-  res.json(await getUsers(normalizeProvider(req.params.provider)));
+  const provider = normalizeProvider(req.params.provider);
+  await initializeProvider(provider, true);
+  res.json(await getUsers(provider));
 }));
 
 app.post('/api/memberships', asyncRoute(async (req, res) => {
@@ -533,6 +541,7 @@ async function initializeMongoDb() {
   const mongoUri = buildMongoUri();
   await mongoose.connect(mongoUri);
   mongoReady = true;
+  providerErrors.mongodb = null;
   await seedMembershipPlans('mongodb');
 }
 
@@ -543,6 +552,7 @@ async function initializeMySql() {
   mysqlPool = mysql.createPool(getMySqlConfig());
   await createMySqlTables();
   mysqlReady = true;
+  providerErrors.mysql = null;
   await seedMembershipPlans('mysql');
 }
 
@@ -555,6 +565,7 @@ async function initializeProvider(provider, required = false) {
 
     await initializeMongoDb();
   } catch (error) {
+    providerErrors[provider] = error.message;
     if (required) throw error;
     console.warn(`Optional ${provider} connection skipped: ${error.message}`);
   }
