@@ -102,3 +102,28 @@ body {
   padding: 12px 14px;
   font-weight: 600;
 }
+
+.db-icon-btn {
+  position: relative;
+  width: 72px;
+  height: 56px;
+  border-radius: 18px;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+.db-icon-btn.mongo { color: #16a34a; border-color: #bbf7d0; background: #f0fdf4; }
+.db-icon-btn.mysql { color: #2563eb; border-color: #bfdbfe; background: #eff6ff; }
+.db-icon-label { font-size: 0.65rem; font-weight: 800; letter-spacing: 0.02em; }
+.provider-modal-badge {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid #ede9fe;
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: #faf5ff;
+  color: #5b21b6;
+  font-weight: 700;
+}

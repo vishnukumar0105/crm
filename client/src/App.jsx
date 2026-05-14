@@ -5,6 +5,13 @@ import { Modal } from 'bootstrap';
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
 const MEMBERS_API = `${API_BASE_URL}/api/memberships`;
 const PLANS_API = `${API_BASE_URL}/api/membership-plans`;
+const providerMembersApi = (provider) => `${API_BASE_URL}/api/providers/${provider}/memberships`;
+const providerPlansApi = (provider) => `${API_BASE_URL}/api/providers/${provider}/membership-plans`;
+
+const dbProviders = {
+  mongodb: { label: 'MongoDB', icon: 'bi-database-fill', accent: 'mongo' },
+  mysql: { label: 'MySQL', icon: 'bi-hdd-network-fill', accent: 'mysql' },
+};
 
 const defaultForm = { fullName: '', email: '', company: '', phone: '', paymentMethod: 'Credit Card', cardName: '', cardNumber: '', expiryDate: '', cvv: '' };
 
@@ -14,6 +21,9 @@ export default function App() {
   const [formData, setFormData] = useState(defaultForm);
   const [membership, setMembership] = useState(null);
   const [memberList, setMemberList] = useState([]);
+  const [providerMemberList, setProviderMemberList] = useState([]);
+  const [providerPlanList, setProviderPlanList] = useState([]);
+  const [selectedAdminProvider, setSelectedAdminProvider] = useState('mongodb');
   const [apiError, setApiError] = useState('');
 
   const plan = useMemo(() => plans.find((p) => p.key === selectedPlan) || null, [plans, selectedPlan]);
@@ -64,9 +74,20 @@ export default function App() {
   }, []);
 
   const openProfileModal = () => new Modal(document.getElementById('profileModal')).show();
-  const openAdminModal = async () => {
-    await loadInitialData();
-    new Modal(document.getElementById('adminModal')).show();
+  const openProviderModal = async (provider) => {
+    try {
+      setApiError('');
+      setSelectedAdminProvider(provider);
+      const [users, dbPlans] = await Promise.all([
+        requestJson(providerMembersApi(provider)),
+        requestJson(providerPlansApi(provider)),
+      ]);
+      setProviderMemberList(users);
+      setProviderPlanList(dbPlans);
+      new Modal(document.getElementById('adminModal')).show();
+    } catch (error) {
+      setApiError(error.message);
+    }
   };
   const handleChange = (event) => setFormData((prev) => ({ ...prev, [event.target.name]: event.target.value }));
 
@@ -127,9 +148,12 @@ export default function App() {
             <p className="text-muted mb-0">Plans are loaded from the configured database membership plan store.</p>
           </div>
           <div className="d-flex gap-2">
-            <button type="button" className="profile-icon-btn" onClick={openAdminModal} title="Admin members list">
-              <i className="bi bi-shield-lock fs-4" />
-            </button>
+            {Object.entries(dbProviders).map(([provider, config]) => (
+              <button key={provider} type="button" className={`profile-icon-btn db-icon-btn ${config.accent}`} onClick={() => openProviderModal(provider)} title={`View ${config.label} members list`}>
+                <i className={`bi ${config.icon} fs-4`} />
+                <span className="db-icon-label">{config.label}</span>
+              </button>
+            ))}
             <button type="button" className="profile-icon-btn" onClick={openProfileModal} disabled={!membership && memberList.length === 0} title={membership || memberList.length > 0 ? 'Edit your membership details' : 'Activate a membership first'}>
               <i className="bi bi-person-circle fs-3" />
             </button>
@@ -153,7 +177,7 @@ export default function App() {
                 </div>
               </div>
             ))}
-            {plans.length === 0 && !apiError && <p className="text-muted">Loading plans from MongoDB...</p>}
+            {plans.length === 0 && !apiError && <p className="text-muted">Loading plans from the configured database...</p>}
           </div>
         ) : (
           <div className="form-page-card">
@@ -209,15 +233,16 @@ export default function App() {
       <div className="modal fade" id="adminModal" tabIndex="-1" aria-hidden="true">
         <div className="modal-dialog modal-xl modal-dialog-centered">
           <div className="modal-content border-0 shadow-lg">
-            <div className="modal-header"><h5 className="modal-title">Admin Panel — Database Stores</h5><button type="button" className="btn-close" data-bs-dismiss="modal" aria-label="Close" /></div>
+            <div className="modal-header"><h5 className="modal-title">{dbProviders[selectedAdminProvider].label} Members & Plans</h5><button type="button" className="btn-close" data-bs-dismiss="modal" aria-label="Close" /></div>
             <div className="modal-body">
-              <h6 className="mb-3">User Details Store</h6>
-              {memberList.length === 0 ? <p className="text-muted">No members activated yet.</p> : (
+              <div className="provider-modal-badge mb-3"><i className={`bi ${dbProviders[selectedAdminProvider].icon} me-2`} />Showing live data from {dbProviders[selectedAdminProvider].label}</div>
+              <h6 className="mb-3">{dbProviders[selectedAdminProvider].label} User Details</h6>
+              {providerMemberList.length === 0 ? <p className="text-muted">No members found in {dbProviders[selectedAdminProvider].label} yet.</p> : (
                 <div className="table-responsive mb-4">
                   <table className="table table-hover align-middle">
                     <thead><tr><th>Name</th><th>Email</th><th>Company</th><th>Phone</th><th>Plan</th><th>Activated Date</th><th>Expiry Date</th><th>Status</th></tr></thead>
                     <tbody>
-                      {memberList.map((user) => (
+                      {providerMemberList.map((user) => (
                         <tr key={user.email}>
                           <td>{user.fullName}</td><td>{user.email}</td><td>{user.company}</td><td>{user.phone}</td>
                           <td className="text-capitalize">{user.planTitle || user.planKey}</td>
@@ -231,12 +256,12 @@ export default function App() {
                 </div>
               )}
 
-              <h6 className="mb-3">Membership Plans Store</h6>
+              <h6 className="mb-3">{dbProviders[selectedAdminProvider].label} Membership Plans</h6>
               <div className="table-responsive">
                 <table className="table table-hover align-middle">
                   <thead><tr><th>Plan Key</th><th>Title</th><th>Price</th><th>Validity</th><th>Features</th></tr></thead>
                   <tbody>
-                    {plans.map((item) => (
+                    {providerPlanList.map((item) => (
                       <tr key={item.key}>
                         <td>{item.key}</td><td>{item.title}</td><td>{item.price}{item.period}</td><td>{item.validityDays} days</td><td>{item.features.join(', ')}</td>
                       </tr>

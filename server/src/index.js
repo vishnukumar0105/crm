@@ -16,6 +16,8 @@ const USER_TABLE = 'user_details';
 const PLAN_TABLE = 'membership_plans';
 
 let mysqlPool;
+let mongoReady = false;
+let mysqlReady = false;
 
 const defaultPlans = [
   {
@@ -246,8 +248,8 @@ async function seedMySqlMembershipPlans() {
   );
 }
 
-async function seedMembershipPlans() {
-  if (DB_PROVIDER === 'mysql') {
+async function seedMembershipPlans(provider = DB_PROVIDER) {
+  if (provider === 'mysql') {
     await seedMySqlMembershipPlans();
     return;
   }
@@ -259,8 +261,36 @@ function getCardLast4(cardNumber = '') {
   return String(cardNumber).replace(/\D/g, '').slice(-4);
 }
 
-async function getPlans() {
-  if (DB_PROVIDER === 'mysql') {
+function ensureProviderReady(provider) {
+  if (provider === 'mysql' && !mysqlReady) {
+    const error = new Error('MySQL is not connected. Check MYSQL_* settings and DB_PROVIDER/DB_COMPARE_PROVIDERS.');
+    error.statusCode = 503;
+    throw error;
+  }
+
+  if (provider === 'mongodb' && !mongoReady) {
+    const error = new Error('MongoDB is not connected. Check MONGODB_* settings and DB_PROVIDER/DB_COMPARE_PROVIDERS.');
+    error.statusCode = 503;
+    throw error;
+  }
+}
+
+function normalizeProvider(provider) {
+  const value = String(provider || '').toLowerCase();
+
+  if (!['mongodb', 'mysql'].includes(value)) {
+    const error = new Error('Provider must be mongodb or mysql.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return value;
+}
+
+async function getPlans(provider = DB_PROVIDER) {
+  ensureProviderReady(provider);
+
+  if (provider === 'mysql') {
     const [rows] = await mysqlPool.query(`SELECT * FROM ${PLAN_TABLE} WHERE is_active = TRUE ORDER BY sort_order ASC, price_amount ASC`);
     return rows.map(mapMySqlPlan);
   }
@@ -316,8 +346,10 @@ async function upsertPlan(payload) {
   );
 }
 
-async function getUsers() {
-  if (DB_PROVIDER === 'mysql') {
+async function getUsers(provider = DB_PROVIDER) {
+  ensureProviderReady(provider);
+
+  if (provider === 'mysql') {
     const [rows] = await mysqlPool.query(`
       SELECT
         users.*,
@@ -451,11 +483,19 @@ app.get('/api/health', (_req, res) => {
     database: DB_PROVIDER === 'mysql' ? getMySqlConfig().database : mongoose.connection.name,
     userStore: DB_PROVIDER === 'mysql' ? USER_TABLE : USER_COLLECTION,
     planStore: DB_PROVIDER === 'mysql' ? PLAN_TABLE : PLAN_COLLECTION,
+    providers: {
+      mongodb: mongoReady,
+      mysql: mysqlReady,
+    },
   });
 });
 
 app.get('/api/membership-plans', asyncRoute(async (_req, res) => {
   res.json(await getPlans());
+}));
+
+app.get('/api/providers/:provider/membership-plans', asyncRoute(async (req, res) => {
+  res.json(await getPlans(normalizeProvider(req.params.provider)));
 }));
 
 app.post('/api/membership-plans', asyncRoute(async (req, res) => {
@@ -474,6 +514,10 @@ app.get('/api/memberships', asyncRoute(async (_req, res) => {
   res.json(await getUsers());
 }));
 
+app.get('/api/providers/:provider/memberships', asyncRoute(async (req, res) => {
+  res.json(await getUsers(normalizeProvider(req.params.provider)));
+}));
+
 app.post('/api/memberships', asyncRoute(async (req, res) => {
   return res.status(201).json(await upsertUser(req.body));
 }));
@@ -484,24 +528,48 @@ app.use((err, _req, res, _next) => {
 });
 
 async function initializeMongoDb() {
+  if (mongoReady) return;
+
   const mongoUri = buildMongoUri();
   await mongoose.connect(mongoUri);
-  await seedMembershipPlans();
+  mongoReady = true;
+  await seedMembershipPlans('mongodb');
 }
 
 async function initializeMySql() {
+  if (mysqlReady) return;
+
   const mysql = await import('mysql2/promise');
   mysqlPool = mysql.createPool(getMySqlConfig());
   await createMySqlTables();
-  await seedMembershipPlans();
+  mysqlReady = true;
+  await seedMembershipPlans('mysql');
+}
+
+async function initializeProvider(provider, required = false) {
+  try {
+    if (provider === 'mysql') {
+      await initializeMySql();
+      return;
+    }
+
+    await initializeMongoDb();
+  } catch (error) {
+    if (required) throw error;
+    console.warn(`Optional ${provider} connection skipped: ${error.message}`);
+  }
 }
 
 async function startServer() {
-  if (DB_PROVIDER === 'mysql') {
-    await initializeMySql();
-  } else {
-    await initializeMongoDb();
-  }
+  await initializeProvider(DB_PROVIDER, true);
+
+  const compareProviders = (process.env.DB_COMPARE_PROVIDERS || 'mongodb,mysql')
+    .split(',')
+    .map((provider) => provider.trim().toLowerCase())
+    .filter((provider) => ['mongodb', 'mysql'].includes(provider));
+
+  await Promise.all([...new Set(compareProviders)].map((provider) => initializeProvider(provider, false)));
+
 
   app.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
@@ -509,6 +577,8 @@ async function startServer() {
     console.log(`Database connected: ${DB_PROVIDER === 'mysql' ? getMySqlConfig().database : mongoose.connection.name}`);
     console.log(`User store: ${DB_PROVIDER === 'mysql' ? USER_TABLE : USER_COLLECTION}`);
     console.log(`Membership plan store: ${DB_PROVIDER === 'mysql' ? PLAN_TABLE : PLAN_COLLECTION}`);
+    console.log(`MongoDB viewer: ${mongoReady ? 'ready' : 'not connected'}`);
+    console.log(`MySQL viewer: ${mysqlReady ? 'ready' : 'not connected'}`);
   });
 }
 

@@ -29,7 +29,7 @@ GET  /api/memberships
 POST /api/memberships
 ```
 
-The server decides whether those API calls go to MongoDB or MySQL based on `DB_PROVIDER`.
+The server decides where normal writes go based on `DB_PROVIDER`. For the RnD viewer icons, the backend can also connect to both providers and expose provider-specific read endpoints.
 
 ## 2) Backend Setup
 
@@ -171,7 +171,26 @@ If your backend API is deployed on another URL, create `client/.env`:
 VITE_API_BASE_URL=https://your-live-api-domain.com
 ```
 
-## 7) API Endpoints
+## 7) RnD MongoDB and MySQL Viewer Icons
+
+The top-right admin icon has been replaced with two provider icons:
+
+```text
+MongoDB icon
+MySQL icon
+```
+
+Clicking the MongoDB icon opens the members and plans stored in MongoDB. Clicking the MySQL icon opens the members and plans stored in MySQL.
+
+To allow both icons to read both databases in one server run, keep this in `server/.env`:
+
+```env
+DB_COMPARE_PROVIDERS=mongodb,mysql
+```
+
+Normal create/update actions still use `DB_PROVIDER`. For example, `DB_PROVIDER=mysql` saves new form submissions to MySQL. The provider-specific icon endpoints are read-only viewer APIs for RnD comparison.
+
+## 8) API Endpoints
 
 ### Health Check
 
@@ -253,7 +272,18 @@ Example body:
 
 The server calculates `activatedAt` and `expiresAt` from the selected plan validity. For safety, it stores only `cardLast4`; it does not store full card numbers or CVV.
 
-## 8) Queries to View Data
+### Provider-Specific Viewer APIs
+
+```http
+GET /api/providers/mongodb/memberships
+GET /api/providers/mongodb/membership-plans
+GET /api/providers/mysql/memberships
+GET /api/providers/mysql/membership-plans
+```
+
+These are used by the MongoDB and MySQL icons in the UI.
+
+## 9) Queries to View Data
 
 ### MongoDB shell
 
@@ -282,7 +312,7 @@ FROM user_details users
 ORDER BY users.updated_at DESC;
 ```
 
-## 9) Normal Run Order
+## 10) Normal Run Order
 
 You must run both apps:
 
@@ -304,7 +334,7 @@ You must run both apps:
 5. Click the admin icon to see user and plan data from the active database provider.
 6. Open MongoDB Compass or MySQL Workbench to see the same saved data in the database.
 
-## 10) Important Note About the Client API Constant
+## 11) Important Note About the Client API Constant
 
 This is not a dummy database:
 
