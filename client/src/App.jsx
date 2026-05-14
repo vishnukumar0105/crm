@@ -94,7 +94,7 @@ export default function App() {
         paymentMethod: requiresPayment ? formData.paymentMethod : 'No Payment Required',
       });
 
-      showToast(`🎉 ${plan.title} membership activated and saved in MongoDB UserDetails for ${formData.email}.`);
+      showToast(`🎉 ${plan.title} membership activated and saved in the configured database user store for ${formData.email}.`);
     } catch (error) {
       setApiError(error.message);
     }
@@ -110,7 +110,7 @@ export default function App() {
         planKey: membership.planKey,
         paymentMethod: membership.paymentMethod,
       });
-      showToast(`✅ Profile updated in MongoDB UserDetails for ${formData.email}.`);
+      showToast(`✅ Profile updated in the configured database user store for ${formData.email}.`);
     } catch (error) {
       setApiError(error.message);
     }
@@ -124,7 +124,7 @@ export default function App() {
           <div>
             <p className="eyebrow mb-2">Employee Management System</p>
             <h1 className="hero-title mb-1">Choose Your Membership</h1>
-            <p className="text-muted mb-0">Plans are loaded from the MongoDB MembershipPlans collection.</p>
+            <p className="text-muted mb-0">Plans are loaded from the configured database membership plan store.</p>
           </div>
           <div className="d-flex gap-2">
             <button type="button" className="profile-icon-btn" onClick={openAdminModal} title="Admin members list">
@@ -162,7 +162,7 @@ export default function App() {
               <button type="button" className="btn btn-light" onClick={() => setSelectedPlan(null)}><i className="bi bi-arrow-left me-2" />Back to Plans</button>
             </div>
             <form className="row g-3" onSubmit={handleSubmit}>
-              <div className="col-12"><h6 className="mb-1">User Details</h6><p className="text-muted small mb-0">This data is saved dynamically through the API into MongoDB UserDetails.</p></div>
+              <div className="col-12"><h6 className="mb-1">User Details</h6><p className="text-muted small mb-0">This data is saved dynamically through the API into the configured database user store.</p></div>
               <div className="col-md-6"><label className="form-label">Full Name</label><input required className="form-control" name="fullName" value={formData.fullName} onChange={handleChange} /></div>
               <div className="col-md-6"><label className="form-label">Email</label><input required type="email" className="form-control" name="email" value={formData.email} onChange={handleChange} /></div>
               <div className="col-md-6"><label className="form-label">Company</label><input required className="form-control" name="company" value={formData.company} onChange={handleChange} /></div>
@@ -209,9 +209,9 @@ export default function App() {
       <div className="modal fade" id="adminModal" tabIndex="-1" aria-hidden="true">
         <div className="modal-dialog modal-xl modal-dialog-centered">
           <div className="modal-content border-0 shadow-lg">
-            <div className="modal-header"><h5 className="modal-title">Admin Panel — MongoDB Collections</h5><button type="button" className="btn-close" data-bs-dismiss="modal" aria-label="Close" /></div>
+            <div className="modal-header"><h5 className="modal-title">Admin Panel — Database Stores</h5><button type="button" className="btn-close" data-bs-dismiss="modal" aria-label="Close" /></div>
             <div className="modal-body">
-              <h6 className="mb-3">UserDetails Collection</h6>
+              <h6 className="mb-3">User Details Store</h6>
               {memberList.length === 0 ? <p className="text-muted">No members activated yet.</p> : (
                 <div className="table-responsive mb-4">
                   <table className="table table-hover align-middle">
@@ -231,7 +231,7 @@ export default function App() {
                 </div>
               )}
 
-              <h6 className="mb-3">MembershipPlans Collection</h6>
+              <h6 className="mb-3">Membership Plans Store</h6>
               <div className="table-responsive">
                 <table className="table table-hover align-middle">
                   <thead><tr><th>Plan Key</th><th>Title</th><th>Price</th><th>Validity</th><th>Features</th></tr></thead>
