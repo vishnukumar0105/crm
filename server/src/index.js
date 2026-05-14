@@ -278,6 +278,26 @@ function ensureProviderReady(provider) {
   }
 }
 
+function formatProviderError(provider, error) {
+  if (provider === 'mysql' && error.code === 'ECONNREFUSED') {
+    return `MySQL refused the connection at ${getMySqlConfig().host}:${getMySqlConfig().port}. Start MySQL, or update MYSQL_HOST/MYSQL_PORT in server/.env to your real MySQL server.`;
+  }
+
+  if (provider === 'mysql' && error.code === 'ER_BAD_DB_ERROR') {
+    return `MySQL database ${getMySqlConfig().database} does not exist. Create it first with: CREATE DATABASE IF NOT EXISTS ${getMySqlConfig().database};`;
+  }
+
+  if (provider === 'mysql' && ['ER_ACCESS_DENIED_ERROR', 'ER_DBACCESS_DENIED_ERROR'].includes(error.code)) {
+    return 'MySQL login failed. Check MYSQL_USER, MYSQL_PASSWORD, and permissions for MYSQL_DATABASE in server/.env.';
+  }
+
+  if (provider === 'mysql' && error.code === 'ENOTFOUND') {
+    return `MySQL host ${getMySqlConfig().host} was not found. Check MYSQL_HOST in server/.env.`;
+  }
+
+  return error.message;
+}
+
 function normalizeProvider(provider) {
   const value = String(provider || '').toLowerCase();
 
@@ -565,9 +585,16 @@ async function initializeProvider(provider, required = false) {
 
     await initializeMongoDb();
   } catch (error) {
-    providerErrors[provider] = error.message;
-    if (required) throw error;
-    console.warn(`Optional ${provider} connection skipped: ${error.message}`);
+    const formattedError = formatProviderError(provider, error);
+    providerErrors[provider] = formattedError;
+
+    if (required) {
+      const providerError = new Error(formattedError);
+      providerError.statusCode = 503;
+      throw providerError;
+    }
+
+    console.warn(`Optional ${provider} connection skipped: ${formattedError}`);
   }
 }
 

@@ -212,6 +212,23 @@ http://localhost:5000/api/health
 
 The `providers.mysql` value should be `true`. If it is `false`, check the `providerErrors.mysql` value returned by `/api/health`; it will show the exact MySQL connection/import problem.
 
+If you see this error:
+
+```text
+connect ECONNREFUSED 127.0.0.1:3306
+```
+
+It means the backend tried to connect to MySQL on your own machine at port `3306`, but no MySQL server accepted the connection there. Fix one of these:
+
+1. Start your local MySQL server if MySQL is installed locally.
+2. If MySQL is on another server, change `MYSQL_HOST` from `127.0.0.1` to the real MySQL host/IP.
+3. If MySQL uses another port, change `MYSQL_PORT` from `3306` to the real port.
+4. Confirm the database exists:
+   ```sql
+   CREATE DATABASE IF NOT EXISTS Subscription;
+   ```
+5. Restart the backend after changing `server/.env`.
+
 ## 8) API Endpoints
 
 ### Health Check
