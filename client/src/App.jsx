@@ -1,56 +1,305 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import $ from 'jquery';
-import ContactForm from './components/ContactForm.jsx';
-import ContactTable from './components/ContactTable.jsx';
+import { Modal } from 'bootstrap';
 
-const API_URL = 'http://localhost:5000/api/contacts';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
+const MEMBERS_API = `${API_BASE_URL}/api/memberships`;
+const PLANS_API = `${API_BASE_URL}/api/membership-plans`;
+const providerMembersApi = (provider) => `${API_BASE_URL}/api/providers/${provider}/memberships`;
+const providerPlansApi = (provider) => `${API_BASE_URL}/api/providers/${provider}/membership-plans`;
+const SYNC_MEMBERS_API = `${API_BASE_URL}/api/sync-members`;
+
+const dbProviders = {
+  mongodb: { label: 'MongoDB', icon: 'bi-database-fill', accent: 'mongo' },
+  mysql: { label: 'MySQL', icon: 'bi-hdd-network-fill', accent: 'mysql' },
+};
+
+const defaultForm = { fullName: '', email: '', company: '', phone: '', paymentMethod: 'Credit Card', cardName: '', cardNumber: '', expiryDate: '', cvv: '' };
 
 export default function App() {
-  const [contacts, setContacts] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [plans, setPlans] = useState([]);
+  const [selectedPlan, setSelectedPlan] = useState(null);
+  const [formData, setFormData] = useState(defaultForm);
+  const [membership, setMembership] = useState(null);
+  const [memberList, setMemberList] = useState([]);
+  const [providerMemberList, setProviderMemberList] = useState([]);
+  const [providerPlanList, setProviderPlanList] = useState([]);
+  const [selectedAdminProvider, setSelectedAdminProvider] = useState('mongodb');
+  const [apiError, setApiError] = useState('');
 
-  async function loadContacts() {
-    const response = await fetch(API_URL);
+  const plan = useMemo(() => plans.find((p) => p.key === selectedPlan) || null, [plans, selectedPlan]);
+  const requiresPayment = Boolean(plan && plan.priceAmount > 0);
+
+  const showToast = (message) => {
+    $('.success-toast').stop(true, true).text(message).fadeIn(250).delay(2600).fadeOut(350);
+  };
+
+  const requestJson = async (url, options) => {
+    const response = await fetch(url, options);
     const data = await response.json();
-    setContacts(data);
-    setLoading(false);
-  }
 
-  async function createContact(contact) {
-    await fetch(API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(contact),
-    });
+    if (!response.ok) {
+      throw new Error(data.message || 'API request failed.');
+    }
 
-    await loadContacts();
+    return data;
+  };
 
-    $('.flash-message')
-      .stop(true, true)
-      .text('Contact saved successfully.')
-      .fadeIn(200)
-      .delay(900)
-      .fadeOut(300);
-  }
+  const loadPlans = async () => {
+    const dbPlans = await requestJson(PLANS_API);
+    setPlans(dbPlans);
+  };
 
-  async function deleteContact(id) {
-    await fetch(`${API_URL}/${id}`, { method: 'DELETE' });
-    await loadContacts();
-  }
+  const loadMembers = async () => {
+    const users = await requestJson(MEMBERS_API);
+    setMemberList(users);
+
+    if (users.length > 0) {
+      const lastActive = users[0];
+      setMembership(lastActive);
+      setFormData((prev) => ({ ...prev, ...lastActive, plan: lastActive.planKey }));
+    }
+  };
+
+  const loadInitialData = async () => {
+    try {
+      setApiError('');
+      await Promise.all([loadPlans(), loadMembers()]);
+    } catch (error) {
+      setApiError(error.message);
+    }
+  };
 
   useEffect(() => {
-    loadContacts();
+    loadInitialData();
   }, []);
 
+  const openProfileModal = () => new Modal(document.getElementById('profileModal')).show();
+  const openProviderModal = async (provider) => {
+    try {
+      setApiError('');
+      setSelectedAdminProvider(provider);
+      const [users, dbPlans] = await Promise.all([
+        requestJson(providerMembersApi(provider)),
+        requestJson(providerPlansApi(provider)),
+      ]);
+      setProviderMemberList(users);
+      setProviderPlanList(dbPlans);
+      new Modal(document.getElementById('adminModal')).show();
+    } catch (error) {
+      setApiError(error.message);
+    }
+  };
+  const syncProviderMembers = async () => {
+    const from = selectedAdminProvider === 'mysql' ? 'mongodb' : 'mysql';
+    const to = selectedAdminProvider;
+
+    try {
+      setApiError('');
+      const syncResult = await requestJson(SYNC_MEMBERS_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from, to }),
+      });
+      const [users, dbPlans] = await Promise.all([
+        requestJson(providerMembersApi(to)),
+        requestJson(providerPlansApi(to)),
+      ]);
+      setProviderMemberList(users);
+      setProviderPlanList(dbPlans);
+      showToast(`🔄 Synced ${syncResult.synced}/${syncResult.total} members from ${dbProviders[from].label} to ${dbProviders[to].label}.`);
+    } catch (error) {
+      setApiError(error.message);
+    }
+  };
+
+  const handleChange = (event) => setFormData((prev) => ({ ...prev, [event.target.name]: event.target.value }));
+
+  const saveMemberToDb = async (record) => {
+    const savedUser = await requestJson(MEMBERS_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(record),
+    });
+
+    setMembership(savedUser);
+    await loadMembers();
+    return savedUser;
+  };
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    if (!selectedPlan || !plan) return;
+
+    try {
+      setApiError('');
+      const savedUser = await saveMemberToDb({
+        ...formData,
+        planKey: selectedPlan,
+        paymentMethod: requiresPayment ? formData.paymentMethod : 'No Payment Required',
+      });
+      const savedProviders = Object.entries(savedUser.writeResults || {}).filter(([, result]) => result.ok).map(([provider]) => dbProviders[provider]?.label || provider);
+
+      showToast(`🎉 ${plan.title} membership activated for ${formData.email}${savedProviders.length ? ` and saved to ${savedProviders.join(' + ')}` : ''}.`);
+    } catch (error) {
+      setApiError(error.message);
+    }
+  };
+
+  const handleProfileSave = async () => {
+    if (!membership) return;
+
+    try {
+      setApiError('');
+      const savedUser = await saveMemberToDb({
+        ...formData,
+        planKey: membership.planKey,
+        paymentMethod: membership.paymentMethod,
+      });
+      const savedProviders = Object.entries(savedUser.writeResults || {}).filter(([, result]) => result.ok).map(([provider]) => dbProviders[provider]?.label || provider);
+      showToast(`✅ Profile updated for ${formData.email}${savedProviders.length ? ` in ${savedProviders.join(' + ')}` : ''}.`);
+    } catch (error) {
+      setApiError(error.message);
+    }
+  };
+
   return (
-    <div className="container py-4">
-      <h1 className="mb-1">CRM App</h1>
-      <p className="text-muted">React + MongoDB + Bootstrap 5 + jQuery</p>
+    <div className="app-shell">
+      <div className="top-glow" />
+      <div className="container py-4 py-md-5 position-relative">
+        <div className="d-flex justify-content-between align-items-center mb-4">
+          <div>
+            <p className="eyebrow mb-2">Employee Management System</p>
+            <h1 className="hero-title mb-1">Choose Your Membership</h1>
+            <p className="text-muted mb-0">Plans are loaded from the configured database membership plan store.</p>
+          </div>
+          <div className="d-flex gap-2">
+            {Object.entries(dbProviders).map(([provider, config]) => (
+              <button key={provider} type="button" className={`profile-icon-btn db-icon-btn ${config.accent}`} onClick={() => openProviderModal(provider)} title={`View ${config.label} members list`}>
+                <i className={`bi ${config.icon} fs-4`} />
+                <span className="db-icon-label">{config.label}</span>
+              </button>
+            ))}
+            <button type="button" className="profile-icon-btn" onClick={openProfileModal} disabled={!membership && memberList.length === 0} title={membership || memberList.length > 0 ? 'Edit your membership details' : 'Activate a membership first'}>
+              <i className="bi bi-person-circle fs-3" />
+            </button>
+          </div>
+        </div>
 
-      <div className="alert alert-success flash-message" role="alert" style={{ display: 'none' }} />
+        {apiError && <div className="alert alert-danger">API error: {apiError}</div>}
+        <div className="alert alert-success success-toast" role="alert" style={{ display: 'none' }} />
 
-      <ContactForm onSave={createContact} />
-      {loading ? <div className="mt-4">Loading contacts...</div> : <ContactTable contacts={contacts} onDelete={deleteContact} />}
+        {!selectedPlan ? (
+          <div className="row g-4">
+            {plans.map((item) => (
+              <div className="col-12 col-md-6 col-xl-4" key={item.key}>
+                <div className={`plan-card h-100 ${item.popular ? 'popular' : ''}`}>
+                  {item.popular && <span className="badge rounded-pill popular-badge">Most Popular</span>}
+                  <h3>{item.title}</h3>
+                  <div className="d-flex align-items-end gap-1 mb-3"><span className="price-value">{item.price}</span><span className="price-period">{item.period}</span></div>
+                  <p className="text-muted mb-3">{item.description}</p>
+                  <ul className="feature-list list-unstyled mb-4">{item.features.map((f) => <li key={f}><i className="bi bi-check-circle-fill me-2" />{f}</li>)}</ul>
+                  <button className="btn w-100 plan-btn" type="button" onClick={() => setSelectedPlan(item.key)}>{item.cta}</button>
+                </div>
+              </div>
+            ))}
+            {plans.length === 0 && !apiError && <p className="text-muted">Loading plans from the configured database...</p>}
+          </div>
+        ) : (
+          <div className="form-page-card">
+            <div className="d-flex justify-content-between align-items-center mb-3">
+              <h4 className="mb-0">{plan?.title} Membership Form</h4>
+              <button type="button" className="btn btn-light" onClick={() => setSelectedPlan(null)}><i className="bi bi-arrow-left me-2" />Back to Plans</button>
+            </div>
+            <form className="row g-3" onSubmit={handleSubmit}>
+              <div className="col-12"><h6 className="mb-1">User Details</h6><p className="text-muted small mb-0">This data is saved dynamically through the API into the configured database user store.</p></div>
+              <div className="col-md-6"><label className="form-label">Full Name</label><input required className="form-control" name="fullName" value={formData.fullName} onChange={handleChange} /></div>
+              <div className="col-md-6"><label className="form-label">Email</label><input required type="email" className="form-control" name="email" value={formData.email} onChange={handleChange} /></div>
+              <div className="col-md-6"><label className="form-label">Company</label><input required className="form-control" name="company" value={formData.company} onChange={handleChange} /></div>
+              <div className="col-md-6"><label className="form-label">Phone</label><input required className="form-control" name="phone" value={formData.phone} onChange={handleChange} /></div>
+
+              {requiresPayment ? (
+                <>
+                  <div className="col-12"><hr /></div>
+                  <div className="col-12"><h6 className="mb-1">Payment Details</h6><p className="text-muted small mb-0">Only safe payment reference fields are saved. Full card number and CVV are not stored.</p></div>
+                  <div className="col-md-6"><label className="form-label">Payment Method</label><select className="form-select" name="paymentMethod" value={formData.paymentMethod} onChange={handleChange}><option>Credit Card</option><option>Debit Card</option><option>PayPal</option><option>Bank Transfer</option></select></div>
+                  <div className="col-md-6"><label className="form-label">Name on Card</label><input required className="form-control" name="cardName" value={formData.cardName} onChange={handleChange} /></div>
+                  <div className="col-md-6"><label className="form-label">Card Number</label><input required className="form-control" name="cardNumber" value={formData.cardNumber} onChange={handleChange} /></div>
+                  <div className="col-md-3"><label className="form-label">Expiry</label><input required className="form-control" placeholder="MM/YY" name="expiryDate" value={formData.expiryDate} onChange={handleChange} /></div>
+                  <div className="col-md-3"><label className="form-label">CVV</label><input required className="form-control" name="cvv" value={formData.cvv} onChange={handleChange} /></div>
+                </>
+              ) : (
+                <div className="col-12"><div className="free-pill"><i className="bi bi-stars me-2" />Free plan selected — no payment is required.</div></div>
+              )}
+
+              <div className="col-12 d-flex justify-content-end"><button type="submit" className="btn plan-btn px-4">Activate Membership</button></div>
+            </form>
+          </div>
+        )}
+      </div>
+
+      <div className="modal fade" id="profileModal" tabIndex="-1" aria-hidden="true">
+        <div className="modal-dialog modal-lg modal-dialog-centered">
+          <div className="modal-content border-0 shadow-lg">
+            <div className="modal-header"><h5 className="modal-title">Edit Profile Details</h5><button type="button" className="btn-close" data-bs-dismiss="modal" aria-label="Close" /></div>
+            <div className="modal-body">
+              {!membership ? <p className="text-muted mb-0">No active membership yet.</p> : <div className="row g-3">
+                <p className="text-muted">Current plan: <strong className="text-dark text-capitalize">{membership.planTitle || membership.planKey}</strong></p>
+                <div className="col-md-6"><label className="form-label">Full Name</label><input className="form-control" name="fullName" value={formData.fullName} onChange={handleChange} /></div>
+                <div className="col-md-6"><label className="form-label">Email</label><input type="email" className="form-control" name="email" value={formData.email} onChange={handleChange} /></div>
+                <div className="col-md-6"><label className="form-label">Company</label><input className="form-control" name="company" value={formData.company} onChange={handleChange} /></div>
+                <div className="col-md-6"><label className="form-label">Phone</label><input className="form-control" name="phone" value={formData.phone} onChange={handleChange} /></div>
+              </div>}
+            </div>
+            <div className="modal-footer"><button type="button" className="btn btn-light" data-bs-dismiss="modal">Close</button><button type="button" className="btn plan-btn" onClick={handleProfileSave} disabled={!membership}>Save Profile Changes</button></div>
+          </div>
+        </div>
+      </div>
+
+      <div className="modal fade" id="adminModal" tabIndex="-1" aria-hidden="true">
+        <div className="modal-dialog modal-xl modal-dialog-centered">
+          <div className="modal-content border-0 shadow-lg">
+            <div className="modal-header"><h5 className="modal-title">{dbProviders[selectedAdminProvider].label} Members & Plans</h5><button type="button" className="btn-close" data-bs-dismiss="modal" aria-label="Close" /></div>
+            <div className="modal-body">
+              <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3"><div className="provider-modal-badge"><i className={`bi ${dbProviders[selectedAdminProvider].icon} me-2`} />Showing live data from {dbProviders[selectedAdminProvider].label}</div><button type="button" className="btn btn-sm btn-outline-primary sync-btn" onClick={syncProviderMembers}><i className="bi bi-arrow-repeat me-1" />Sync from {selectedAdminProvider === 'mysql' ? 'MongoDB' : 'MySQL'}</button></div>
+              <h6 className="mb-3">{dbProviders[selectedAdminProvider].label} User Details</h6>
+              {providerMemberList.length === 0 ? <p className="text-muted">No members found in {dbProviders[selectedAdminProvider].label} yet.</p> : (
+                <div className="table-responsive mb-4">
+                  <table className="table table-hover align-middle">
+                    <thead><tr><th>Name</th><th>Email</th><th>Company</th><th>Phone</th><th>Plan</th><th>Activated Date</th><th>Expiry Date</th><th>Status</th></tr></thead>
+                    <tbody>
+                      {providerMemberList.map((user) => (
+                        <tr key={user.email}>
+                          <td>{user.fullName}</td><td>{user.email}</td><td>{user.company}</td><td>{user.phone}</td>
+                          <td className="text-capitalize">{user.planTitle || user.planKey}</td>
+                          <td>{new Date(user.activatedAt).toLocaleDateString()}</td>
+                          <td>{new Date(user.expiresAt).toLocaleDateString()}</td>
+                          <td><span className="badge rounded-pill text-bg-success">{user.status}</span></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              <h6 className="mb-3">{dbProviders[selectedAdminProvider].label} Membership Plans</h6>
+              <div className="table-responsive">
+                <table className="table table-hover align-middle">
+                  <thead><tr><th>Plan Key</th><th>Title</th><th>Price</th><th>Validity</th><th>Features</th></tr></thead>
+                  <tbody>
+                    {providerPlanList.map((item) => (
+                      <tr key={item.key}>
+                        <td>{item.key}</td><td>{item.title}</td><td>{item.price}{item.period}</td><td>{item.validityDays} days</td><td>{item.features.join(', ')}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div className="modal-footer"><button type="button" className="btn btn-light" data-bs-dismiss="modal">Close</button></div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
