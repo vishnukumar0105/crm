@@ -7,6 +7,7 @@ const MEMBERS_API = `${API_BASE_URL}/api/memberships`;
 const PLANS_API = `${API_BASE_URL}/api/membership-plans`;
 const providerMembersApi = (provider) => `${API_BASE_URL}/api/providers/${provider}/memberships`;
 const providerPlansApi = (provider) => `${API_BASE_URL}/api/providers/${provider}/membership-plans`;
+const SYNC_MEMBERS_API = `${API_BASE_URL}/api/sync-members`;
 
 const dbProviders = {
   mongodb: { label: 'MongoDB', icon: 'bi-database-fill', accent: 'mongo' },
@@ -89,6 +90,29 @@ export default function App() {
       setApiError(error.message);
     }
   };
+  const syncProviderMembers = async () => {
+    const from = selectedAdminProvider === 'mysql' ? 'mongodb' : 'mysql';
+    const to = selectedAdminProvider;
+
+    try {
+      setApiError('');
+      const syncResult = await requestJson(SYNC_MEMBERS_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from, to }),
+      });
+      const [users, dbPlans] = await Promise.all([
+        requestJson(providerMembersApi(to)),
+        requestJson(providerPlansApi(to)),
+      ]);
+      setProviderMemberList(users);
+      setProviderPlanList(dbPlans);
+      showToast(`🔄 Synced ${syncResult.synced}/${syncResult.total} members from ${dbProviders[from].label} to ${dbProviders[to].label}.`);
+    } catch (error) {
+      setApiError(error.message);
+    }
+  };
+
   const handleChange = (event) => setFormData((prev) => ({ ...prev, [event.target.name]: event.target.value }));
 
   const saveMemberToDb = async (record) => {
@@ -237,7 +261,7 @@ export default function App() {
           <div className="modal-content border-0 shadow-lg">
             <div className="modal-header"><h5 className="modal-title">{dbProviders[selectedAdminProvider].label} Members & Plans</h5><button type="button" className="btn-close" data-bs-dismiss="modal" aria-label="Close" /></div>
             <div className="modal-body">
-              <div className="provider-modal-badge mb-3"><i className={`bi ${dbProviders[selectedAdminProvider].icon} me-2`} />Showing live data from {dbProviders[selectedAdminProvider].label}</div>
+              <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3"><div className="provider-modal-badge"><i className={`bi ${dbProviders[selectedAdminProvider].icon} me-2`} />Showing live data from {dbProviders[selectedAdminProvider].label}</div><button type="button" className="btn btn-sm btn-outline-primary sync-btn" onClick={syncProviderMembers}><i className="bi bi-arrow-repeat me-1" />Sync from {selectedAdminProvider === 'mysql' ? 'MongoDB' : 'MySQL'}</button></div>
               <h6 className="mb-3">{dbProviders[selectedAdminProvider].label} User Details</h6>
               {providerMemberList.length === 0 ? <p className="text-muted">No members found in {dbProviders[selectedAdminProvider].label} yet.</p> : (
                 <div className="table-responsive mb-4">

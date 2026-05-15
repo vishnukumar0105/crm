@@ -511,6 +511,114 @@ async function upsertUser(reqBody, provider = DB_PROVIDER) {
   ).populate('membershipPlan');
 }
 
+async function saveExistingUserToProvider(existingUser, provider) {
+  ensureProviderReady(provider);
+
+  const planKey = String(existingUser.planKey || existingUser.plan || '').toLowerCase();
+  const selectedPlan = provider === 'mysql'
+    ? (await mysqlPool.execute(`SELECT * FROM ${PLAN_TABLE} WHERE plan_key = :planKey AND is_active = TRUE`, { planKey }))[0].map(mapMySqlPlan)[0]
+    : await MembershipPlan.findOne({ key: planKey, isActive: true });
+
+  if (!selectedPlan) {
+    const error = new Error(`Plan ${planKey} does not exist in ${provider}.`);
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const activatedAt = new Date(existingUser.activatedAt || Date.now());
+  const expiresAt = new Date(existingUser.expiresAt || activatedAt);
+  const normalizedUser = {
+    fullName: existingUser.fullName,
+    email: String(existingUser.email || '').toLowerCase(),
+    company: existingUser.company,
+    phone: existingUser.phone,
+    planKey: selectedPlan.key,
+    planTitle: selectedPlan.title,
+    planPrice: selectedPlan.price,
+    status: existingUser.status || 'active',
+    activatedAt,
+    expiresAt,
+    paymentMethod: existingUser.paymentMethod || 'No Payment Required',
+    cardName: existingUser.cardName || '',
+    cardLast4: existingUser.cardLast4 || '',
+    expiryDate: existingUser.expiryDate || '',
+  };
+
+  if (provider === 'mysql') {
+    await mysqlPool.execute(
+      `INSERT INTO ${USER_TABLE}
+        (full_name, email, company, phone, membership_plan_id, plan_key, plan_title, plan_price, status, activated_at, expires_at, payment_method, card_name, card_last4, expiry_date)
+       VALUES (:fullName, :email, :company, :phone, :membershipPlanId, :planKey, :planTitle, :planPrice, :status, :activatedAt, :expiresAt, :paymentMethod, :cardName, :cardLast4, :expiryDate)
+       ON DUPLICATE KEY UPDATE
+        full_name = VALUES(full_name),
+        company = VALUES(company),
+        phone = VALUES(phone),
+        membership_plan_id = VALUES(membership_plan_id),
+        plan_key = VALUES(plan_key),
+        plan_title = VALUES(plan_title),
+        plan_price = VALUES(plan_price),
+        status = VALUES(status),
+        activated_at = VALUES(activated_at),
+        expires_at = VALUES(expires_at),
+        payment_method = VALUES(payment_method),
+        card_name = VALUES(card_name),
+        card_last4 = VALUES(card_last4),
+        expiry_date = VALUES(expiry_date)`,
+      {
+        ...normalizedUser,
+        membershipPlanId: selectedPlan.id,
+        activatedAt: toMySqlDateTime(activatedAt),
+        expiresAt: toMySqlDateTime(expiresAt),
+      },
+    );
+    return normalizedUser;
+  }
+
+  return UserDetail.findOneAndUpdate(
+    { email: normalizedUser.email },
+    {
+      ...normalizedUser,
+      membershipPlan: selectedPlan._id,
+    },
+    { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true },
+  ).populate('membershipPlan');
+}
+
+async function syncMembersBetweenProviders(fromProvider, toProvider) {
+  const from = normalizeProvider(fromProvider);
+  const to = normalizeProvider(toProvider);
+
+  if (from === to) {
+    const error = new Error('Source and target providers must be different.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  await initializeProvider(from, true);
+  await initializeProvider(to, true);
+
+  const sourceUsers = await getUsers(from);
+  const results = [];
+
+  for (const user of sourceUsers) {
+    try {
+      await saveExistingUserToProvider(user, to);
+      results.push({ email: user.email, ok: true });
+    } catch (error) {
+      results.push({ email: user.email, ok: false, message: formatProviderError(to, error) });
+    }
+  }
+
+  return {
+    from,
+    to,
+    total: sourceUsers.length,
+    synced: results.filter((result) => result.ok).length,
+    failed: results.filter((result) => !result.ok).length,
+    results,
+  };
+}
+
 async function upsertUserAcrossProviders(reqBody) {
   const writeProviders = getProviderList(DB_WRITE_PROVIDERS);
 
@@ -597,6 +705,13 @@ app.get('/api/providers/:provider/memberships', asyncRoute(async (req, res) => {
   const provider = normalizeProvider(req.params.provider);
   await initializeProvider(provider, true);
   res.json(await getUsers(provider));
+}));
+
+app.post('/api/sync-members', asyncRoute(async (req, res) => {
+  const from = req.body.from || req.query.from || 'mongodb';
+  const to = req.body.to || req.query.to || 'mysql';
+
+  res.json(await syncMembersBetweenProviders(from, to));
 }));
 
 app.post('/api/memberships', asyncRoute(async (req, res) => {

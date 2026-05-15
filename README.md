@@ -196,7 +196,7 @@ If MySQL plans appear but MySQL members are empty, it usually means previous for
 DB_WRITE_PROVIDERS=mongodb,mysql
 ```
 
-After changing it, restart the backend and submit the membership form again. Existing MongoDB-only users are not automatically copied into MySQL; activate/edit-submit that member again or migrate the old rows manually.
+After changing it, restart the backend and submit the membership form again. For members that were already saved only in MongoDB, open the MySQL popup and click **Sync from MongoDB** to copy existing MongoDB members into MySQL.
 
 ### If the MySQL icon says MySQL is not connected
 
@@ -355,6 +355,24 @@ GET /api/providers/mysql/membership-plans
 ```
 
 These are used by the MongoDB and MySQL icons in the UI.
+
+### Sync Existing Members Between Providers
+
+```http
+POST /api/sync-members
+Content-Type: application/json
+```
+
+Example body:
+
+```json
+{
+  "from": "mongodb",
+  "to": "mysql"
+}
+```
+
+This is used by the popup **Sync from MongoDB/MySQL** button to copy existing members from one provider to the other.
 
 ## 9) Queries to View Data
 
