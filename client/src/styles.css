@@ -1,9 +1,104 @@
-body {
-  background: #f8f9fa;
+:root {
+  --primary-1: #7c3aed;
+  --primary-2: #a855f7;
+  --primary-3: #c084fc;
 }
 
-.flash-message {
+body {
+  background: #ffffff;
+  color: #1f2937;
+  font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+}
+
+.app-shell {
+  min-height: 100vh;
+  position: relative;
+  overflow: hidden;
+}
+
+.top-glow {
+  position: absolute;
+  width: 560px;
+  height: 560px;
+  top: -220px;
+  right: -140px;
+  background: radial-gradient(circle, rgba(168, 85, 247, 0.42) 0%, rgba(255, 255, 255, 0) 72%);
+  pointer-events: none;
+}
+
+.eyebrow {
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-size: 0.74rem;
+  color: var(--primary-1);
+  font-weight: 700;
+}
+
+.hero-title { font-size: clamp(1.85rem, 2.6vw, 2.6rem); font-weight: 750; }
+
+.profile-icon-btn {
+  border: 1px solid #ede9fe;
+  background: #fff;
+  border-radius: 50%;
+  width: 56px;
+  height: 56px;
+  color: var(--primary-1);
+}
+.profile-icon-btn:disabled { opacity: 0.45; }
+
+.plan-card {
+  background: white;
+  border: 1px solid #ede9fe;
+  border-radius: 20px;
+  padding: 24px;
+  box-shadow: 0 12px 35px rgba(109, 40, 217, 0.08);
+}
+.plan-card.popular {
+  border: 2px solid #c4b5fd;
+  transform: translateY(-6px);
+}
+.popular-badge { background: linear-gradient(135deg, var(--primary-1), var(--primary-2)); }
+.price-value { font-size: 2rem; font-weight: 800; color: #111827; }
+.price-period { color: #6b7280; }
+.feature-list li { margin-bottom: 10px; color: #374151; }
+.feature-list i { color: var(--primary-2); }
+
+.plan-btn {
+  background: linear-gradient(135deg, var(--primary-1), var(--primary-2));
+  color: white;
+  border: 0;
+  font-weight: 600;
+  border-radius: 12px;
+  padding: 10px 16px;
+}
+.plan-btn:hover { color: white; filter: brightness(1.05); }
+
+.success-toast {
   position: sticky;
-  top: 12px;
-  z-index: 1040;
+  top: 16px;
+  z-index: 1050;
+}
+
+.modal-content { border-radius: 18px; }
+.form-control:focus, .form-select:focus {
+  border-color: #c4b5fd;
+  box-shadow: 0 0 0 0.2rem rgba(139, 92, 246, 0.2);
+}
+
+
+.form-page-card {
+  background: #fff;
+  border: 1px solid #ede9fe;
+  border-radius: 20px;
+  padding: 24px;
+  box-shadow: 0 12px 35px rgba(109, 40, 217, 0.08);
+}
+
+.free-pill {
+  background: linear-gradient(135deg, rgba(124,58,237,.12), rgba(168,85,247,.12));
+  border: 1px solid #ddd6fe;
+  color: #5b21b6;
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-weight: 600;
 }
